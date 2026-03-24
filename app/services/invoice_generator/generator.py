@@ -226,7 +226,7 @@ class InvoiceGenerator:
         if logo_path and logo_path.exists():
             try:
                 logo = Image(str(logo_path), width=80, height=80)
-                title_text = Paragraph("VINAS.LT", header_title_style)
+                title_text = Paragraph("AutoFolwark.COM", header_title_style)
                 subtitle_text = Paragraph(str(subtitle), header_subtitle_style) if subtitle else Spacer(1, 0)
                 header_data = [
                     [logo, title_text],
@@ -265,11 +265,11 @@ class InvoiceGenerator:
                 )
                 elements.append(centered_table)
             except Exception:
-                elements.append(Paragraph("VINAS.LT", title_center_style))
+                elements.append(Paragraph("AutoFolwark", title_center_style))
                 if subtitle:
                     elements.append(Paragraph(str(subtitle), subtitle_center_style))
         else:
-            elements.append(Paragraph("VINAS.LT", title_center_style))
+            elements.append(Paragraph("AutoFolwark", title_center_style))
             if subtitle:
                 elements.append(Paragraph(str(subtitle), subtitle_center_style))
 

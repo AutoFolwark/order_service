@@ -23,7 +23,7 @@ class InvoiceTypes:
         )
 
         return BaseInvoice(
-            company_name='VINAS',
+            company_name='AUTOFOLWARK',
             logo_path=str(logo_path),
             header_subtitle=None,
             company_info_lines=[
