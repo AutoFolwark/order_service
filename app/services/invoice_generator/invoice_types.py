@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from pydantic import BaseModel, Field
 
 
@@ -16,15 +14,14 @@ class BaseInvoice(BaseModel):
 class InvoiceTypes:
     @classmethod
     def get_default_info(cls) -> BaseInvoice:
-        script_dir = Path(__file__).resolve().parent
-        logo_path = script_dir / "images" / "vinaslt_logo.png"
+        logo_path = "https://i.imgur.com/ybdcKJu.png"
         delivery_terms = (
             ""
         )
 
         return BaseInvoice(
-            company_name='AUTOFOLWARK',
-            logo_path=str(logo_path),
+            company_name='BIDMAX.EU',
+            logo_path=logo_path,
             header_subtitle=None,
             company_info_lines=[
                 'UAB "HVJ LOGISTIC"',

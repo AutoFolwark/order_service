@@ -2,6 +2,7 @@ import asyncio
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
+from urllib.request import urlopen
 
 from app.database.models import Order
 from app.enums.order import InvoiceTypeEnum
@@ -222,11 +223,24 @@ class InvoiceGenerator:
 
         # Header with optional logo, mirrored from legacy template proportions
         subtitle = info.header_subtitle or ""
-        logo_path = Path(info.logo_path) if info.logo_path else None
-        if logo_path and logo_path.exists():
+        logo_path = info.logo_path
+        logo_source: str | BytesIO | None = None
+        if logo_path:
+            if logo_path.startswith(("http://", "https://")):
+                try:
+                    with urlopen(logo_path, timeout=10) as response:
+                        logo_source = BytesIO(response.read())
+                except Exception:
+                    logo_source = None
+            else:
+                local_logo_path = Path(logo_path)
+                if local_logo_path.exists():
+                    logo_source = str(local_logo_path)
+
+        if logo_source:
             try:
-                logo = Image(str(logo_path), width=80, height=80)
-                title_text = Paragraph("AutoFolwark.COM", header_title_style)
+                logo = Image(logo_source, width=80, height=80)
+                title_text = Paragraph(info.company_name, header_title_style)
                 subtitle_text = Paragraph(str(subtitle), header_subtitle_style) if subtitle else Spacer(1, 0)
                 header_data = [
                     [logo, title_text],
@@ -265,11 +279,11 @@ class InvoiceGenerator:
                 )
                 elements.append(centered_table)
             except Exception:
-                elements.append(Paragraph("AutoFolwark", title_center_style))
+                elements.append(Paragraph(info.company_name, title_center_style))
                 if subtitle:
                     elements.append(Paragraph(str(subtitle), subtitle_center_style))
         else:
-            elements.append(Paragraph("AutoFolwark", title_center_style))
+            elements.append(Paragraph(info.company_name, title_center_style))
             if subtitle:
                 elements.append(Paragraph(str(subtitle), subtitle_center_style))
 
