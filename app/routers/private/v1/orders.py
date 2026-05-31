@@ -10,7 +10,12 @@ from sqlalchemy.exc import IntegrityError
 from fastapi_pagination.ext.sqlalchemy import paginate
 from app.config import Permissions
 from app.core.logger import logger
-from app.core.utils import get_cheapest_terminal_prices, create_pagination_page
+from app.core.utils import (
+    get_cheapest_terminal_prices,
+    create_pagination_page,
+    get_default_calculator,
+    round_calculator_amount,
+)
 from app.database.crud import OrderService
 from app.database.db.session import get_async_db
 from app.database.schemas import OrderCreate, OrderRead, InvoiceItemCreate, OrderUpdate
@@ -85,6 +90,8 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
                 location=location_data.name,
                 fee_type=fee_type_data.fee_type,
                 destination=destination_data.name,
+                year=data.year,
+                purchase_for_company=False,
             )
         except grpc.aio.AioRpcError as e:
             logger.error(
@@ -137,7 +144,7 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
                 user_email=user_identity["user_email"]
             ), flush=True
         )
-        default_calculator = calculator_data.data.calculator
+        default_calculator = get_default_calculator(calculator_data)
         if not default_calculator:
             raise BadRequestProblem("Calculator response missing calculator data")
         items = [
@@ -146,10 +153,14 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
                 amount=data.vehicle_value,
                 order_id=order.id,
             ),
-            InvoiceItemCreate(name='Broker Fee', amount=default_calculator.broker_fee, order_id=order.id),
+            InvoiceItemCreate(
+                name='Broker Fee',
+                amount=round_calculator_amount(default_calculator.broker_fee),
+                order_id=order.id,
+            ),
         ]
         items.extend(
-            InvoiceItemCreate(name=fee.name, amount=fee.price, order_id=order.id)
+            InvoiceItemCreate(name=fee.name, amount=round_calculator_amount(fee.price), order_id=order.id)
             for fee in default_calculator.additional.fees
             if fee.price
         )
@@ -161,14 +172,14 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
             items.append(
                 InvoiceItemCreate(
                     name=f"Transportation ({terminal_name})",
-                    amount=transportation_city.price,
+                    amount=round_calculator_amount(transportation_city.price),
                     order_id=order.id,
                 )
             )
             items.append(
                 InvoiceItemCreate(
                     name=f"Ocean Shipping ({terminal_name})",
-                    amount=ocean_city.price,
+                    amount=round_calculator_amount(ocean_city.price),
                     order_id=order.id,
                 )
             )
@@ -266,6 +277,8 @@ async def update_order(
                     vehicle_type=update_data.get("vehicle_type", order.vehicle_type),
                     fee_type=fee_type_data.fee_type,
                     location=location_data.name,
+                    year=update_data.get("year", order.year),
+                    purchase_for_company=False,
                 )
             except grpc.aio.AioRpcError as e:
                 logger.error(

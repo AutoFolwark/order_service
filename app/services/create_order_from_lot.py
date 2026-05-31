@@ -2,7 +2,7 @@ import asyncio
 import grpc.aio
 from datetime import datetime, timezone
 
-from app.core.utils import get_cheapest_terminal_prices
+from app.core.utils import get_cheapest_terminal_prices, get_default_calculator, round_calculator_amount
 from app.database.crud import OrderService
 from app.database.db.session import get_db_context
 from app.database.models import Order
@@ -40,6 +40,8 @@ class GenerateFromLot:
                 auction=lot.base_site,
                 vehicle_type="MOTO" if lot.vehicle_type == 'Motorcycle' else "CAR",
                 location=lot.location,
+                year=lot.year if lot.year > 0 else None,
+                purchase_for_company=False,
             )
         return calculator
 
@@ -50,7 +52,9 @@ class GenerateFromLot:
                 price=order.vehicle_value,
                 auction=order.auction,
                 vehicle_type=order.vehicle_type,
-                location=order.location_name
+                location=order.location_name,
+                year=order.year,
+                purchase_for_company=False,
             )
         return calculator
 
@@ -82,7 +86,7 @@ class GenerateFromLot:
         fee_type_id = detailed_data.fee_type_id or 0
         keys = str(lot.keys).lower() == "yes"
         damage = bool(lot.damage_pr or lot.damage_sec)
-        default_calculator = calculator.data.calculator
+        default_calculator = get_default_calculator(calculator)
         if not default_calculator:
             raise ValueError("Calculator response missing calculator data")
 
@@ -111,6 +115,7 @@ class GenerateFromLot:
                     lot_id=lot.lot_id,
                     vehicle_value=self.bid_amount,
                     vehicle_type="MOTO" if lot.vehicle_type == 'Motorcycle' else "CAR",
+                    year=lot.year if lot.year > 0 else None,
                     vin=lot.vin,
                     vehicle_name=lot.title,
                     keys=keys,
@@ -155,13 +160,13 @@ class GenerateFromLot:
             ),
             InvoiceItemCreate(
                 name="Broker Fee",
-                amount=default_calculator.broker_fee,
+                amount=round_calculator_amount(default_calculator.broker_fee),
                 order_id=order.id,
             ),
         ]
 
         items.extend(
-            InvoiceItemCreate(name=fee.name, amount=fee.price, order_id=order.id)
+            InvoiceItemCreate(name=fee.name, amount=round_calculator_amount(fee.price), order_id=order.id)
             for fee in default_calculator.additional.fees
             if fee.price
         )
@@ -172,14 +177,14 @@ class GenerateFromLot:
             items.append(
                 InvoiceItemCreate(
                     name=f"Transportation ({order.terminal_name})",
-                    amount=transportation_city.price if transportation_city else 0,
+                    amount=round_calculator_amount(transportation_city.price) if transportation_city else 0,
                     order_id=order.id,
                 )
             )
             items.append(
                 InvoiceItemCreate(
                     name=f"Ocean Shipping ({order.destination_name})",
-                    amount=ocean_city.price if ocean_city else 0,
+                    amount=round_calculator_amount(ocean_city.price) if ocean_city else 0,
                     order_id=order.id,
                 )
             )

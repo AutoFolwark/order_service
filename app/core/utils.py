@@ -39,7 +39,7 @@ def get_cheapest_terminal_prices(calculator: calculator_pb2.DefaultCalculator) -
     ocean_options = get_ocean_options(calculator)
 
     cheapest_pair: tuple[City, City] | None = None
-    cheapest_total: int | None = None
+    cheapest_total: float | None = None
 
     for name, transportation_city in transportation_options.items():
         ocean_city = ocean_options.get(name)
@@ -52,6 +52,22 @@ def get_cheapest_terminal_prices(calculator: calculator_pb2.DefaultCalculator) -
             cheapest_total = total
 
     return cheapest_pair
+
+
+def get_default_calculator(
+    response: calculator_pb2.GetCalculatorWithDataResponse,
+) -> calculator_pb2.DefaultCalculator | None:
+    if not response.HasField("data"):
+        return None
+    if not response.data.HasField("calculator_in_dollars"):
+        return None
+    if not response.data.calculator_in_dollars.HasField("calculator"):
+        return None
+    return response.data.calculator_in_dollars.calculator
+
+
+def round_calculator_amount(value: float) -> int:
+    return int(round(value))
 
 
 def create_pagination_page(pydantic_model: type[BaseModel])-> type[Page[BaseModel]]:

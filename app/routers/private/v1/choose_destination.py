@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Body
 from rfc9457 import ForbiddenProblem, NotFoundProblem, BadRequestProblem
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Permissions
+from app.core.utils import get_default_calculator
 from app.database.crud import OrderService
 from app.database.db.session import get_async_db
 from app.database.schemas import OrderRead, OrderUpdate
@@ -58,10 +59,13 @@ async def choose_destination(
     )
 
     if not previous_destination_id:
+        default_calculator = get_default_calculator(calculator)
+        if not default_calculator:
+            raise BadRequestProblem("Calculator response missing calculator data")
 
         invoice_items = GenerateFromLot.build_invoice_items_from_order_data(
             order=order,
-            default_calculator=calculator.data.calculator,
+            default_calculator=default_calculator,
         )
 
         await order_service.create_invoice_items_batch(order_id, invoice_items)

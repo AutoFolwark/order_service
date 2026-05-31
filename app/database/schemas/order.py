@@ -17,6 +17,7 @@ class OrderBase(BaseModel):
         description="Invoice type",
     )
     vehicle_type: str = Field(default="CAR", description="Vehicle type")
+    year: int | None = Field(default=None, description="Vehicle year")
     vin: str = Field(..., min_length=1, description="Vehicle VIN")
     vehicle_name: str = Field(..., min_length=1, description="Vehicle model/name")
     keys: bool = Field(default=False, description="Keys present")
@@ -52,6 +53,7 @@ class OrderUpdate(BaseModel):
     vehicle_value: int | None = None
     invoice_type: InvoiceTypeEnum | None = None
     vehicle_type: str | None = None
+    year: int | None = None
     vin: str | None = None
     vehicle_name: str | None = None
     keys: bool | None = None

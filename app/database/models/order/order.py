@@ -30,6 +30,7 @@ class Order(IdMixin, TimestampMixin, Base):
         Enum(InvoiceTypeEnum), nullable=False, default=InvoiceTypeEnum.DEFAULT
     )
     vehicle_type: Mapped[str] = mapped_column(nullable=False, default="CAR")
+    year: Mapped[int | None] = mapped_column(nullable=True)
     vin: Mapped[str] = mapped_column(unique=True, nullable=False)
     vehicle_name: Mapped[str] = mapped_column(nullable=False)
     keys: Mapped[bool] = mapped_column(nullable=False, default=False)
