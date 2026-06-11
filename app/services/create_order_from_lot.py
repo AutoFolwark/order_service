@@ -46,13 +46,19 @@ class GenerateFromLot:
         return calculator
 
     @staticmethod
-    async def get_calculator_from_order(order: Order)-> calculator_pb2.GetCalculatorWithDataResponse:
+    async def get_calculator_from_order(
+        order: Order,
+        *,
+        destination_name: str | None = None,
+    ) -> calculator_pb2.GetCalculatorWithDataResponse:
         async with CalculatorRpcClient() as client:
             calculator = await client.get_calculator_with_data(
                 price=order.vehicle_value,
                 auction=order.auction,
                 vehicle_type=order.vehicle_type,
                 location=order.location_name,
+                fee_type=order.fee_type_name or None,
+                destination=destination_name or order.destination_name,
                 year=order.year,
                 purchase_for_company=False,
             )

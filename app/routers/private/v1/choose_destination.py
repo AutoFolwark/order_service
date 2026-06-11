@@ -5,7 +5,7 @@ from rfc9457 import ForbiddenProblem, NotFoundProblem, BadRequestProblem
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Permissions
 from app.core.utils import get_calculator
-from app.database.crud import OrderService
+from app.database.crud import InvoiceItemService, OrderService
 from app.database.db.session import get_async_db
 from app.database.schemas import OrderRead, OrderUpdate
 from app.enums.order import OrderStatusEnum
@@ -47,7 +47,6 @@ async def choose_destination(
     destination_name = destinations_mapped[destination_id]
 
     previous_status = order.delivery_status
-    previous_destination_id = order.destination_id
 
     updated_order = await order_service.update(
         order_id,
@@ -58,18 +57,25 @@ async def choose_destination(
         )
     )
 
-    if not previous_destination_id:
-        calculator = get_calculator(calculator, currency="PLN")
-        if not calculator:
-            raise BadRequestProblem("Calculator response missing calculator data")
+    calculator = await GenerateFromLot.get_calculator_from_order(
+        updated_order,
+        destination_name=destination_name,
+    )
+    calculator_pln = get_calculator(calculator, currency="PLN")
+    if not calculator_pln:
+        raise BadRequestProblem("Calculator response missing calculator data")
 
-        invoice_items = GenerateFromLot.build_invoice_items_from_order_data(
-            order=order,
-            calculator=calculator,
-        )
+    invoice_item_service = InvoiceItemService(db)
+    await invoice_item_service.delete_by_order_id(order_id, exclude_extra_fees=True)
 
-        await order_service.create_invoice_items_batch(order_id, invoice_items)
+    invoice_items = GenerateFromLot.build_invoice_items_from_order_data(
+        order=updated_order,
+        calculator=calculator_pln,
+    )
 
+    await order_service.create_invoice_items_batch(order_id, invoice_items)
+
+    if previous_status == OrderStatusEnum.WON:
         await send_status_change_notifications(
             updated_order,
             previous_status,
@@ -107,7 +113,6 @@ async def available_destinations(
         ))
 
     return destinations
-
 
 
 

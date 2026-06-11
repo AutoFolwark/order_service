@@ -1,6 +1,5 @@
-from typing import Sequence, Any, Coroutine
-
-from sqlalchemy import select, Select, Row, RowMapping
+from typing import Sequence
+from sqlalchemy import delete, select, Select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.crud.base import BaseService
@@ -24,6 +23,14 @@ class InvoiceItemService(BaseService[InvoiceItems, InvoiceItemCreate, InvoiceIte
             await self.session.refresh(invoice_item)
 
         return list(invoice_items)
+
+    async def delete_by_order_id(self, order_id: int, *, exclude_extra_fees: bool = False) -> int:
+        stmt = delete(InvoiceItems).where(InvoiceItems.order_id == order_id)
+        if exclude_extra_fees:
+            stmt = stmt.where(InvoiceItems.is_extra_fee.is_(False))
+        result = await self.session.execute(stmt)
+        await self.session.commit()
+        return result.rowcount
 
     async def get_by_order_id(
         self, order_id: int, get_stmt: bool = False
