@@ -13,7 +13,7 @@ from app.core.logger import logger
 from app.core.utils import (
     get_cheapest_terminal_prices,
     create_pagination_page,
-    get_default_calculator,
+    get_calculator,
     round_calculator_amount,
 )
 from app.database.crud import OrderService
@@ -144,9 +144,12 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
                 user_email=user_identity["user_email"]
             ), flush=True
         )
-        default_calculator = get_default_calculator(calculator_data)
-        if not default_calculator:
+        calculator = get_calculator(calculator_data)
+        if not calculator:
             raise BadRequestProblem("Calculator response missing calculator data")
+
+        default_calculator = calculator.calculator
+        
         items = [
             InvoiceItemCreate(
                 name=f'{data.vehicle_name} ({data.vin})',

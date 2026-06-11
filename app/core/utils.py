@@ -54,16 +54,27 @@ def get_cheapest_terminal_prices(calculator: calculator_pb2.DefaultCalculator) -
     return cheapest_pair
 
 
-def get_default_calculator(
+def get_calculator(
     response: calculator_pb2.GetCalculatorWithDataResponse,
-) -> calculator_pb2.DefaultCalculator | None:
+    currency: str = "USD",
+) -> calculator_pb2.CalculatorOut | None:
+
+    currency = currency.upper()
+
     if not response.HasField("data"):
         return None
-    if not response.data.HasField("calculator_in_dollars"):
+
+    if currency == "USD":
+        return response.data.calculator_in_dollars
+
+    if not response.data.calculators_in_currencies:
         return None
-    if not response.data.calculator_in_dollars.HasField("calculator"):
-        return None
-    return response.data.calculator_in_dollars.calculator
+
+    for calculator in response.data.calculators_in_currencies:
+        if calculator.currency == currency:
+            return calculator
+
+    return None
 
 
 def round_calculator_amount(value: float) -> int:

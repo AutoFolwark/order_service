@@ -2,7 +2,7 @@ import asyncio
 import grpc.aio
 from datetime import datetime, timezone
 
-from app.core.utils import get_cheapest_terminal_prices, get_default_calculator, round_calculator_amount
+from app.core.utils import get_cheapest_terminal_prices, get_calculator, round_calculator_amount
 from app.database.crud import OrderService
 from app.database.db.session import get_db_context
 from app.database.models import Order
@@ -86,9 +86,11 @@ class GenerateFromLot:
         fee_type_id = detailed_data.fee_type_id or 0
         keys = str(lot.keys).lower() == "yes"
         damage = bool(lot.damage_pr or lot.damage_sec)
-        default_calculator = get_default_calculator(calculator)
-        if not default_calculator:
+        calculator_data = get_calculator(calculator)
+        if not calculator_data:
             raise ValueError("Calculator response missing calculator data")
+        
+        default_calculator = calculator_data.calculator
 
         terminal_id_for_order = terminal_id
         cheapest_terminal = get_cheapest_terminal_prices(default_calculator)
@@ -107,55 +109,58 @@ class GenerateFromLot:
             except grpc.aio.AioRpcError as e:
                 raise ValueError(f"Failed to fetch user data for order creation: {e.details()}") from e
 
+            async with get_db_context() as db:
+                order_service = OrderService(db)
+                order = await order_service.create(
+                    OrderCreate(
+                        auction=self.auction,
+                        order_date=datetime.now(timezone.utc),
+                        lot_id=lot.lot_id,
+                        vehicle_value=self.bid_amount,
+                        vehicle_type="MOTO" if lot.vehicle_type == 'Motorcycle' else "CAR",
+                        year=lot.year if lot.year > 0 else None,
+                        vin=lot.vin,
+                        vehicle_name=lot.title,
+                        keys=keys,
+                        damage=damage,
+                        color=lot.color or "Unknown",
+                        auto_generated=True,
+                        fee_type=fee_type_data.fee_type if fee_type_data and fee_type_data.fee_type else "",
+                        location_id=location_id,
+                        destination_id=destination.destination_id,
+                        terminal_id=terminal_id_for_order,
+                        fee_type_id=fee_type_id,
+                        user_uuid=self.user_uuid,
+                        location_name=location.name,
+                        location_city=location.city,
+                        location_state=location.state,
+                        location_postal_code=location.postal_code,
+                        destination_name=destination.destination_name,
+                        terminal_name=terminal_name_for_order,
+                        fee_type_name=fee_type_data.fee_type if fee_type_data and fee_type_data.fee_type else "",
+                        user_name=user_identity["user_name"],
+                        user_email=user_identity["user_email"],
+                    ),
+                    flush=True,
+                )
 
-            order = await order_service.create(
-                OrderCreate(
-                    auction=self.auction,
-                    order_date=datetime.now(timezone.utc),
-                    lot_id=lot.lot_id,
-                    vehicle_value=self.bid_amount,
-                    vehicle_type="MOTO" if lot.vehicle_type == 'Motorcycle' else "CAR",
-                    year=lot.year if lot.year > 0 else None,
-                    vin=lot.vin,
-                    vehicle_name=lot.title,
-                    keys=keys,
-                    damage=damage,
-                    color=lot.color or "Unknown",
-                    auto_generated=True,
-                    fee_type=fee_type_data.fee_type if fee_type_data and fee_type_data.fee_type else "",
-                    location_id=location_id,
-                    destination_id=destination.destination_id,
-                    terminal_id=terminal_id_for_order,
-                    fee_type_id=fee_type_id,
-                    user_uuid=self.user_uuid,
-                    location_name=location.name,
-                    location_city=location.city,
-                    location_state=location.state,
-                    location_postal_code=location.postal_code,
-                    destination_name=destination.destination_name,
-                    terminal_name=terminal_name_for_order,
-                    fee_type_name=fee_type_data.fee_type if fee_type_data and fee_type_data.fee_type else "",
-                    user_name=user_identity["user_name"],
-                    user_email=user_identity["user_email"],
-                ),
-                flush=True,
-            )
+                await db.commit()
 
-            await db.commit()
-
-            return order
+                return order
 
     @classmethod
     def build_invoice_items_from_order_data(
         cls,
         *,
-        order,
-        default_calculator: calculator_pb2.DefaultCalculator,
+        order: Order,
+        calculator: calculator_pb2.CalculatorOut,
     ) -> list[InvoiceItemCreate]:
+        default_calculator = calculator.calculator
+
         items = [
             InvoiceItemCreate(
                 name=f"{order.vehicle_name.upper()} ({order.vin})",
-                amount=order.vehicle_value,
+                amount=round_calculator_amount(order.vehicle_value / calculator.rate_to_usd),
                 order_id=order.id,
             ),
             InvoiceItemCreate(
