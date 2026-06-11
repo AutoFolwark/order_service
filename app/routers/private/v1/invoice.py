@@ -12,37 +12,12 @@ from app.config import Permissions
 from app.core.logger import logger
 from app.database.crud import OrderService
 from app.database.db.session import get_async_db
-from app.database.models import Order
 from app.enums.order import OrderStatusEnum
 from app.rpc_client.auth import AuthRpcClient
-from app.rpc_client.calculator import DetailedInfoService
 from app.services.invoice_generator.generator import InvoiceGenerator
 
 
 invoice_router = APIRouter(prefix="/{order_id}/invoice", tags=["Invoice"])
-
-
-async def _get_usd_to_eur_rate(order: Order) -> float | None:
-    try:
-        async with DetailedInfoService() as calculator_client:
-            rate = await calculator_client.get_rate()
-    except grpc.aio.AioRpcError:
-        logger.warning(
-            "Calculator RPC failed while fetching USD/EUR rate",
-            extra={"order_id": order.id},
-        )
-        return None
-    if rate:
-        logger.info(
-            "USD/EUR rate resolved for invoice",
-            extra={"order_id": order.id, "usd_to_eur_rate": rate},
-        )
-    else:
-        logger.warning(
-            "USD/EUR rate not available for invoice",
-            extra={"order_id": order.id},
-        )
-    return rate
 
 
 @invoice_router.get(
@@ -94,8 +69,7 @@ async def get_invoice(
         # Ignore RPC failures to avoid blocking invoice generation
         pass
 
-    usd_to_eur_rate = await _get_usd_to_eur_rate(order)
-    generator = InvoiceGenerator(order, user=auth_user, usd_to_eur_rate=usd_to_eur_rate)
+    generator = InvoiceGenerator(order, user=auth_user)
     pdf_bytes = generator.generate_invoice_based_on_invoice_type()
 
     filename = f"invoice_{order.vin}.pdf"

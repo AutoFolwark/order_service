@@ -164,7 +164,7 @@ class GenerateFromLot:
                 order_id=order.id,
             ),
             InvoiceItemCreate(
-                name="Broker Fee",
+                name="Prowizja brokerska",
                 amount=round_calculator_amount(default_calculator.broker_fee),
                 order_id=order.id,
             ),
@@ -181,14 +181,14 @@ class GenerateFromLot:
             transportation_city, ocean_city = cheapest_prices
             items.append(
                 InvoiceItemCreate(
-                    name=f"Transportation ({order.terminal_name})",
+                    name=f"Transport ({order.terminal_name})",
                     amount=round_calculator_amount(transportation_city.price) if transportation_city else 0,
                     order_id=order.id,
                 )
             )
             items.append(
                 InvoiceItemCreate(
-                    name=f"Ocean Shipping ({order.destination_name})",
+                    name=f"Transport morski ({order.destination_name})",
                     amount=round_calculator_amount(ocean_city.price) if ocean_city else 0,
                     order_id=order.id,
                 )

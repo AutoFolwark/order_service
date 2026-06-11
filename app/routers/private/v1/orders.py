@@ -157,7 +157,7 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
                 order_id=order.id,
             ),
             InvoiceItemCreate(
-                name='Broker Fee',
+                name='Prowizja brokerska',
                 amount=round_calculator_amount(default_calculator.broker_fee),
                 order_id=order.id,
             ),
@@ -174,14 +174,14 @@ async def create_order(data: OrderIn = Body(...), db: AsyncSession = Depends(get
             terminal_name = transportation_city.name
             items.append(
                 InvoiceItemCreate(
-                    name=f"Transportation ({terminal_name})",
+                    name=f"Transport ({terminal_name})",
                     amount=round_calculator_amount(transportation_city.price),
                     order_id=order.id,
                 )
             )
             items.append(
                 InvoiceItemCreate(
-                    name=f"Ocean Shipping ({terminal_name})",
+                    name=f"Transport morski ({terminal_name})",
                     amount=round_calculator_amount(ocean_city.price),
                     order_id=order.id,
                 )

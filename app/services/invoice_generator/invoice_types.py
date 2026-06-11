@@ -1,4 +1,8 @@
+from pathlib import Path
+
 from pydantic import BaseModel, Field
+
+_INVOICE_DIR = Path(__file__).resolve().parent
 
 
 class BaseInvoice(BaseModel):
@@ -14,7 +18,7 @@ class BaseInvoice(BaseModel):
 class InvoiceTypes:
     @classmethod
     def get_default_info(cls) -> BaseInvoice:
-        logo_path = "https://i.imgur.com/ybdcKJu.png"
+        logo_path = str(_INVOICE_DIR / "images" / "bidmax_logo.png")
         delivery_terms = (
             ""
         )
@@ -25,17 +29,15 @@ class InvoiceTypes:
             header_subtitle=None,
             company_info_lines=[
                 'UAB "HVJ LOGISTIC"',
-                "Įm. kodas 306661666",
-                "PVM mokėtojo kodas LT100016791816",
-                "V. Nagevičiaus g. 3, Vilnius, Lietuva",
+                "Kod firmy: 306661666",
+                "Numer VAT: LT100016791816",
+                "ul. V. Nagevičiaus 3, Wilno, Litwa",
                 "SEB — LT887044090108483458",
             ],
-            payment_details_usd=[
-                # No USD account provided
-            ],
+            payment_details_usd=[],
             payment_details_eur=[
                 "Bank: SEB",
-                "IBAN: LT887044090108483458",
+                "Numer IBAN: LT887044090108483458",
             ],
             delivery_terms=delivery_terms,
         )

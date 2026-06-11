@@ -9,7 +9,8 @@ from app.enums.order import InvoiceTypeEnum
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
@@ -18,10 +19,38 @@ from app.services.invoice_generator.invoice_types import InvoiceTypes, BaseInvoi
 
 
 class InvoiceGenerator:
-    def __init__(self, order: Order, user=None, usd_to_eur_rate: float | None = None):
+    CURRENCY = "PLN"
+
+    def __init__(self, order: Order, user=None):
         self.order = order
         self.user = user
-        self.usd_to_eur_rate = usd_to_eur_rate
+
+    @staticmethod
+    def _format_amount(amount: float) -> str:
+        return f"{amount:.2f} {InvoiceGenerator.CURRENCY}"
+
+    @staticmethod
+    def _scaled_logo(logo_source: str | BytesIO, max_height: float = 36) -> Image:
+        reader = ImageReader(logo_source)
+        intrinsic_width, intrinsic_height = reader.getSize()
+        height = max_height
+        width = height * (intrinsic_width / intrinsic_height)
+        return Image(logo_source, width=width, height=height, mask="auto")
+
+    @staticmethod
+    def _resolve_logo_source(logo_path: str | None) -> str | BytesIO | None:
+        if not logo_path:
+            return None
+        if logo_path.startswith(("http://", "https://")):
+            try:
+                with urlopen(logo_path, timeout=10) as response:
+                    return BytesIO(response.read())
+            except Exception:
+                return None
+        local_logo_path = Path(logo_path)
+        if local_logo_path.exists():
+            return str(local_logo_path)
+        return None
 
     def _load_user_via_rpc(self):
 
@@ -56,7 +85,7 @@ class InvoiceGenerator:
                 lines.append('+' + user.phone_number)
 
         elif getattr(self.order, "user_uuid", None):
-            lines.append(f"User UUID: {self.order.user_uuid}")
+            lines.append(f"UUID użytkownika: {self.order.user_uuid}")
 
         return [line for line in lines if line]
 
@@ -111,274 +140,233 @@ class InvoiceGenerator:
         pdf = SimpleDocTemplate(
             buffer,
             pagesize=letter,
-            rightMargin=50,
-            leftMargin=50,
-            topMargin=40,
-            bottomMargin=40,
+            rightMargin=40,
+            leftMargin=40,
+            topMargin=28,
+            bottomMargin=28,
         )
+
+        content_width = letter[0] - pdf.leftMargin - pdf.rightMargin
+        invoice_items = self.order.invoice_items or []
+        item_count = len(invoice_items)
+        compact = item_count > 6
+        dense = item_count > 10
+
+        body_size = 7 if dense else 8
+        header_size = 18 if dense else 20
+        row_pad = 2 if dense else 3 if compact else 4
+        section_gap = 4 if dense else 6 if compact else 8
 
         styles = getSampleStyleSheet()
         header_title_style = ParagraphStyle(
             "HeaderTitleStyle",
             parent=styles["Heading1"],
-            fontSize=36,
-            textColor=colors.black,
+            fontSize=header_size,
+            textColor=colors.HexColor("#1a202c"),
             fontName=font_bold,
-            leading=40,
+            leading=header_size + 2,
             spaceAfter=0,
             spaceBefore=0,
-            leftIndent=10,
+            alignment=TA_LEFT,
         )
         header_subtitle_style = ParagraphStyle(
             "HeaderSubtitleStyle",
             parent=styles["Normal"],
-            fontSize=9,
-            textColor=colors.black,
+            fontSize=body_size,
+            textColor=colors.HexColor("#4a5568"),
             fontName=font_name,
-            leading=10,
+            leading=body_size + 2,
             spaceAfter=0,
             spaceBefore=0,
-            leftIndent=10,
-            rightIndent=10,
-        )
-        title_center_style = ParagraphStyle(
-            "HeaderTitleCenterStyle",
-            parent=header_title_style,
-            alignment=TA_CENTER,
-            leftIndent=0,
-        )
-        subtitle_center_style = ParagraphStyle(
-            "HeaderSubtitleCenterStyle",
-            parent=header_subtitle_style,
-            alignment=TA_CENTER,
-            leftIndent=0,
+            alignment=TA_LEFT,
         )
         invoice_title_style = ParagraphStyle(
             "InvoiceTitleStyle",
             parent=styles["Heading1"],
-            fontSize=18,
-            alignment=1,
-            spaceBefore=1,
-            spaceAfter=1,
+            fontSize=13,
+            alignment=TA_RIGHT,
+            spaceBefore=0,
+            spaceAfter=2,
             fontName=font_bold,
-            textColor=colors.black,
+            textColor=colors.HexColor("#1a202c"),
+            leading=15,
+        )
+        value_style = ParagraphStyle(
+            "ValueStyle",
+            parent=styles["Normal"],
+            fontSize=body_size,
+            fontName=font_name,
+            textColor=colors.HexColor("#1a202c"),
+            alignment=TA_LEFT,
+            leading=body_size + 2,
         )
         bold_style = ParagraphStyle(
             "BoldStyle",
             parent=styles["Heading4"],
-            fontSize=10,
+            fontSize=body_size,
             fontName=font_bold,
             textColor=colors.black,
+            leading=body_size + 2,
         )
-        ten_style = ParagraphStyle(
-            "TenStyle",
+        body_style = ParagraphStyle(
+            "BodyStyle",
             parent=styles["Normal"],
-            fontSize=10,
+            fontSize=body_size,
             fontName=font_name,
             textColor=colors.black,
-        )
-        ten_style_center = ParagraphStyle(
-            "TenStyleCenter",
-            parent=ten_style,
-            alignment=1,
+            leading=body_size + 2,
         )
         normal_style = ParagraphStyle(
             "NormalStyle",
             parent=styles["Normal"],
-            fontSize=8,
+            fontSize=body_size,
             fontName=font_name,
             textColor=colors.black,
-        )
-        bold_descriptions_style = ParagraphStyle(
-            "BoldDescriptionsStyle",
-            parent=styles["Normal"],
-            fontSize=8,
-            fontName=font_bold,
-            textColor=colors.black,
+            leading=body_size + 2,
         )
         delivery_terms_style = ParagraphStyle(
             "DeliveryTerms",
             fontName=font_name,
-            fontSize=7,
+            fontSize=body_size,
             textColor=colors.black,
+            leading=body_size + 2,
             leftIndent=0,
         )
         item_text_style = ParagraphStyle(
             "ItemTextStyle",
             parent=styles["Normal"],
-            fontSize=9,
+            fontSize=body_size,
             fontName=font_name,
             textColor=colors.black,
+            leading=body_size + 1,
         )
         thank_you_style = ParagraphStyle(
             "ThankYouStyle",
             parent=styles["Normal"],
-            fontSize=8,
+            fontSize=body_size,
             fontName=font_name,
-            alignment=1,
-            textColor=colors.black,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#4a5568"),
+            leading=body_size + 2,
         )
 
         elements = []
 
-        # Header with optional logo, mirrored from legacy template proportions
         subtitle = info.header_subtitle or ""
-        logo_path = info.logo_path
-        logo_source: str | BytesIO | None = None
-        if logo_path:
-            if logo_path.startswith(("http://", "https://")):
-                try:
-                    with urlopen(logo_path, timeout=10) as response:
-                        logo_source = BytesIO(response.read())
-                except Exception:
-                    logo_source = None
-            else:
-                local_logo_path = Path(logo_path)
-                if local_logo_path.exists():
-                    logo_source = str(local_logo_path)
+        logo_source = self._resolve_logo_source(info.logo_path)
+        logo_width = 0
+        logo_cell: Image | str = ""
 
+        logo_max_height = 28 if dense else 32
         if logo_source:
             try:
-                logo = Image(logo_source, width=80, height=80)
-                title_text = Paragraph(info.company_name, header_title_style)
-                subtitle_text = Paragraph(str(subtitle), header_subtitle_style) if subtitle else Spacer(1, 0)
-                header_data = [
-                    [logo, title_text],
-                    ["", subtitle_text],
-                ]
-                header_table = Table(header_data, colWidths=[90, 400])
-                header_table.setStyle(
-                    TableStyle(
-                        [
-                            ("ALIGN", (0, 0), (0, 0), "CENTER"),
-                            ("VALIGN", (0, 0), (0, 0), "MIDDLE"),
-                            ("SPAN", (0, 0), (0, 1)),
-                            ("ALIGN", (1, 0), (1, 0), "LEFT"),
-                            ("VALIGN", (1, 0), (1, 0), "BOTTOM"),
-                            ("ALIGN", (1, 1), (1, 1), "LEFT"),
-                            ("VALIGN", (1, 1), (1, 1), "TOP"),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 5),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-                            ("TOPPADDING", (0, 0), (-1, -1), 2),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                        ]
-                    )
-                )
-                centered_table = Table([[header_table]], colWidths=[500])
-                centered_table.setStyle(
-                    TableStyle(
-                        [
-                            ("ALIGN", (0, 0), (0, 0), "CENTER"),
-                            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                            ("RIGHTPADDING", (0, 0), (-1, -1), -70),
-                            ("TOPPADDING", (0, 0), (-1, -1), -30),
-                            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
-                        ]
-            )
-                )
-                elements.append(centered_table)
+                logo = self._scaled_logo(logo_source, max_height=logo_max_height)
+                logo_width = logo.drawWidth
+                logo_cell = logo
             except Exception:
-                elements.append(Paragraph(info.company_name, title_center_style))
-                if subtitle:
-                    elements.append(Paragraph(str(subtitle), subtitle_center_style))
-        else:
-            elements.append(Paragraph(info.company_name, title_center_style))
-            if subtitle:
-                elements.append(Paragraph(str(subtitle), subtitle_center_style))
+                logo_cell = ""
 
-        elements.append(Paragraph("INVOICE", invoice_title_style))
-        elements.append(Spacer(1, 2))
+        company_block = [Paragraph(info.company_name, header_title_style)]
+        if subtitle:
+            company_block.append(Paragraph(str(subtitle), header_subtitle_style))
 
         invoice_number = f"{self.order.vin}"
         invoice_date = (
             self.order.created_at if isinstance(self.order.created_at, datetime) else datetime.now(timezone.utc)
         )
-        invoice_info = Table(
-            [
-                [Paragraph("<b>Invoice Number:</b>", ten_style_center), Paragraph(invoice_number, ten_style_center)],
-                [Paragraph("<b>Invoice Date:</b>", ten_style_center), Paragraph(invoice_date.strftime("%B %d, %Y"), ten_style_center)],
-            ],
-            colWidths=[180, 180],
-        )
-        invoice_info.hAlign = "CENTER"
-        invoice_info.setStyle(
+        meta_block = [
+            Paragraph("FAKTURA", invoice_title_style),
+            Paragraph(f"<b>Numer:</b> {invoice_number}", value_style),
+            Paragraph(f"<b>Data:</b> {invoice_date.strftime('%d.%m.%Y')}", value_style),
+        ]
+
+        if logo_cell:
+            top_table = Table(
+                [[logo_cell, company_block, meta_block]],
+                colWidths=[logo_width + 10, content_width * 0.45, content_width * 0.55 - logo_width - 10],
+            )
+        else:
+            top_table = Table(
+                [[company_block, meta_block]],
+                colWidths=[content_width * 0.5, content_width * 0.5],
+            )
+        top_table.setStyle(
             TableStyle(
                 [
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                     ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("ALIGN", (-1, 0), (-1, 0), "RIGHT"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                 ]
             )
         )
-        elements.append(invoice_info)
-        elements.append(Spacer(1, 6))
+        elements.append(top_table)
 
-        # Invoice by / to
+        divider = Table([[""]], colWidths=[content_width], rowHeights=[1])
+        divider.setStyle(
+            TableStyle(
+                [
+                    ("LINEBELOW", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                    ("TOPPADDING", (0, 0), (-1, -1), section_gap),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), section_gap),
+                ]
+            )
+        )
+        elements.append(divider)
+
         company_lines = info.company_info_lines or [info.company_name]
-        invoice_by_rows = [[Paragraph("<b>Invoice by:</b>", bold_style)]] + [
-            [Paragraph(str(line), ten_style)] for line in company_lines
-        ]
-        invoice_by_table = Table(invoice_by_rows, colWidths=[250])
-
+        seller_lines = "<br/>".join(str(line) for line in company_lines)
         invoice_to_lines = self._build_invoice_to_lines()
-        invoice_to_rows = [[Paragraph("<b>Invoice to:</b>", bold_style)]]
-        if invoice_to_lines:
-            invoice_to_rows.append([Paragraph(", ".join(invoice_to_lines), ten_style)])
-        invoice_to_table = Table(invoice_to_rows, colWidths=[250])
+        buyer_lines = "<br/>".join(invoice_to_lines) if invoice_to_lines else "—"
 
-        parties_table = Table([[invoice_by_table, invoice_to_table]], colWidths=[260, 260])
+        parties_table = Table(
+            [
+                [
+                    Paragraph("<b>Sprzedawca</b><br/>" + seller_lines, body_style),
+                    Paragraph("<b>Nabywca</b><br/>" + buyer_lines, body_style),
+                ]
+            ],
+            colWidths=[content_width / 2, content_width / 2],
+        )
         parties_table.setStyle(
             TableStyle(
                 [
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
                     ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (0, 0), 10),
+                    ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
                 ]
             )
         )
         elements.append(parties_table)
-        elements.append(Spacer(1, -6))
+        elements.append(Spacer(1, section_gap))
 
-        auction_details = " | ".join(
-            [
-                f"Auction: {self.order.auction}",
-                f"Lot: {self.order.lot_id}",
-                f"VIN: {self.order.vin}",
-                f"Vehicle: {self.order.vehicle_name}",
-                f"Location: {self.order.location_name}",
-            ]
+        auction_summary = (
+            f"<b>Aukcja:</b> {self.order.auction} &nbsp;|&nbsp; "
+            f"<b>Lot:</b> {self.order.lot_id} &nbsp;|&nbsp; "
+            f"<b>VIN:</b> {self.order.vin}<br/>"
+            f"<b>Pojazd:</b> {self.order.vehicle_name} &nbsp;|&nbsp; "
+            f"<b>Lokalizacja:</b> {self.order.location_name}"
         )
-        auction_details_table = Table(
-            [
-                [Paragraph("<b>Auction details:</b>", bold_style), Paragraph(auction_details, ten_style)],
-            ],
-            colWidths=[120, 360],
-        )
-        auction_details_table.setStyle(
-            TableStyle(
-                [
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ]
-            )
-        )
-        elements.append(auction_details_table)
-        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(auction_summary, body_style))
+        elements.append(Spacer(1, section_gap))
 
         # Items
         items_table_data = [
             [
-                Paragraph("<b>Description</b>", bold_style),
-                Paragraph("<b>Quantity</b>", bold_style),
-                Paragraph("<b>Unit Price</b>", bold_style),
-                Paragraph("<b>Total</b>", bold_style),
+                Paragraph("<b>Opis</b>", bold_style),
+                Paragraph("<b>Ilość</b>", bold_style),
+                Paragraph("<b>Cena jedn.</b>", bold_style),
+                Paragraph("<b>Razem</b>", bold_style),
             ]
         ]
 
         total_amount = 0.0
-        for item in self.order.invoice_items or []:
+        for item in invoice_items:
             quantity = 1
             amount = float(item.amount)
             total_amount += amount
@@ -386,8 +374,8 @@ class InvoiceGenerator:
                 [
                     Paragraph(item.name, item_text_style),
                     Paragraph(str(quantity), item_text_style),
-                    Paragraph(f"${amount:.2f}", item_text_style),
-                    Paragraph(f"${amount:.2f}", item_text_style),
+                    Paragraph(self._format_amount(amount), item_text_style),
+                    Paragraph(self._format_amount(amount), item_text_style),
                 ]
             )
 
@@ -395,64 +383,73 @@ class InvoiceGenerator:
             [
                 "",
                 "",
-                Paragraph("<b>Total:</b>", bold_style),
-                Paragraph(f"${total_amount:.2f}", bold_style),
+                Paragraph("<b>Razem:</b>", bold_style),
+                Paragraph(self._format_amount(total_amount), bold_style),
             ]
         )
-        if self.usd_to_eur_rate:
-            total_amount_eur = total_amount * self.usd_to_eur_rate
-            items_table_data.append(
-                [
-                    "",
-                    "",
-                    Paragraph("<b>Total (EUR):</b>", bold_style),
-                    Paragraph(f"€{total_amount_eur:.2f}", bold_style),
-                ]
-            )
 
-        items_table = Table(items_table_data, colWidths=[240, 60, 100, 100])
+        qty_col = 36
+        price_col = 78
+        total_col = 78
+        items_table = Table(
+            items_table_data,
+            colWidths=[content_width - qty_col - price_col - total_col, qty_col, price_col, total_col],
+            repeatRows=1,
+        )
         items_table.setStyle(
             TableStyle(
                 [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
-                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#edf2f7")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1a202c")),
                     ("FONTNAME", (0, 0), (-1, 0), font_bold),
-                    ("FONTSIZE", (0, 0), (-1, 0), 10),
+                    ("FONTSIZE", (0, 0), (-1, 0), body_size),
                     ("FONTNAME", (0, 1), (-1, -1), font_name),
-                    ("FONTSIZE", (0, 1), (-1, -1), 8),
-                    ("GRID", (0, 0), (-1, -1), 0.75, colors.black),
-                    ("ALIGN", (1, 1), (-1, -1), "CENTER"),
-                    ("ALIGN", (0, 1), (0, -1), "LEFT"),
-                    ("BACKGROUND", (0, 1), (-1, -2), colors.whitesmoke),
-                    ("TOPPADDING", (0, 0), (-1, 0), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, 0), 2),
-                    ("TOPPADDING", (0, 1), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 1), (-1, -1), 1),
+                    ("FONTSIZE", (0, 1), (-1, -1), body_size),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#cbd5e0")),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("TOPPADDING", (0, 0), (-1, -1), row_pad),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), row_pad),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#f7fafc")),
                 ]
             )
         )
         elements.append(items_table)
-        elements.append(Spacer(1, 6))
+        elements.append(Spacer(1, section_gap))
 
         if info.delivery_terms:
-            elements.append(Paragraph("<b>Delivery Terms:</b>", bold_descriptions_style))
-            elements.append(Spacer(1, 2))
-            elements.append(Paragraph(info.delivery_terms, delivery_terms_style))
-            elements.append(Spacer(1, 8))
+            elements.append(Paragraph(f"<b>Warunki dostawy:</b> {info.delivery_terms}", delivery_terms_style))
+            elements.append(Spacer(1, section_gap))
 
-        if info.payment_details_usd:
-            elements.append(Paragraph("<b>Bank Details (USD):</b>", bold_descriptions_style))
-            for line in info.payment_details_usd:
-                elements.append(Paragraph(str(line), normal_style))
-            elements.append(Spacer(1, 6))
+        payment_details_pln = getattr(info, "payment_details_pln", None) or info.payment_details_eur
+        footer_rows = []
+        if payment_details_pln:
+            bank_text = "<br/>".join(str(line) for line in payment_details_pln)
+            footer_rows.append(
+                [
+                    Paragraph(f"<b>Dane bankowe ({self.CURRENCY})</b><br/>{bank_text}", normal_style),
+                    Paragraph("<i>Dziękujemy za współpracę.</i>", thank_you_style),
+                ]
+            )
+        else:
+            footer_rows.append(["", Paragraph("<i>Dziękujemy za współpracę.</i>", thank_you_style)])
 
-        if info.payment_details_eur:
-            elements.append(Paragraph("<b>Bank Details (EUR):</b>", bold_descriptions_style))
-            for line in info.payment_details_eur:
-                elements.append(Paragraph(str(line), normal_style))
-            elements.append(Spacer(1, 6))
-
-        elements.append(Paragraph("<i>Thank you for your business.</i>", thank_you_style))
+        footer_table = Table(footer_rows, colWidths=[content_width * 0.65, content_width * 0.35])
+        footer_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+        elements.append(footer_table)
 
         pdf.build(elements)
         buffer.seek(0)
@@ -477,18 +474,11 @@ if __name__ == "__main__":
             self.location_name = "Test Location"
             self.user_uuid = "c2ead8a4-36b5-49ba-b884-4ee818ec8ce9"
             self.invoice_items = [
-                _DummyItem("Vehicle Price", 10000),
-                _DummyItem("Broker Fee", 500),
-                _DummyItem("Insurance", 1000),
-                _DummyItem("Shipping", 100),
-                _DummyItem("Taxes", 100),
-                _DummyItem("Extra Fee", 100),
-                _DummyItem("Total", 12000),
-                _DummyItem('test', 324),
-                _DummyItem('test2', 324),
-                _DummyItem('test3', 324),
-                _DummyItem('test4', 324),
-                _DummyItem('test5', 324),
+                _DummyItem("Cena pojazdu", 10000),
+                _DummyItem("Prowizja brokerska", 500),
+                _DummyItem("Transport", 800),
+                _DummyItem("Transport morski", 1200),
+                _DummyItem("Opłata aukcyjna", 350),
             ]
 
     dummy_order = _DummyOrder()
