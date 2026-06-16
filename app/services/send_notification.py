@@ -20,8 +20,13 @@ async def send_status_change_notifications(
         OrderStatusEnum.DELIVERED: "Delivered",
     }
 
-    def human_status(status: OrderStatusEnum) -> str:
-        return human_readable_statuses.get(status, status.value)
+    def human_status(status: OrderStatusEnum | str) -> str:
+        if not isinstance(status, OrderStatusEnum):
+            try:
+                status = OrderStatusEnum(status)
+            except ValueError:
+                return str(status).replace("_", " ").title()
+        return human_readable_statuses.get(status, status.value.replace("_", " ").title())
 
     user_email = ""
     user_phone = ""
@@ -39,10 +44,10 @@ async def send_status_change_notifications(
 
     base_payload = {
         'user_uuid': user_uuid,
-        "new_order_status": updated_order.delivery_status.value,
-        "previous_order_status": previous_status.value,
-        "new_order_status_human": human_status(updated_order.delivery_status),
-        "previous_order_status_human": human_status(previous_status),
+        "new_order_status": human_status(updated_order.delivery_status),
+        "previous_order_status": human_status(previous_status),
+        "new_order_status_code": updated_order.delivery_status.value,
+        "previous_order_status_code": previous_status.value,
         "order_id": updated_order.id,
         "vin": updated_order.vin,
         "vehicle_title": updated_order.vehicle_name,
